@@ -13,26 +13,7 @@ test_labels_filepath = join(input_path, 't10k-labels-idx1-ubyte/t10k-labels-idx1
 mnist_dataloader = MnistDataloader(training_images_filepath, training_labels_filepath, test_images_filepath, test_labels_filepath)
 (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
 
-T = 1000
-beta_1 = 1e-4
-beta_T = 0.02
-
 device = torch.device("mps")
-
-betas = np.linspace(beta_1, beta_T, T)
-alphas = 1 - betas
-alpha_bars = torch.from_numpy(np.cumprod(alphas)).float().to(device)
-
-def x_t_given_x_0(t, x_0s):
-    if t.shape[0] != x_0s.shape[0]:
-        raise ValueError(
-            f"timestep batch size ({t.shape[0]}) does not match image batch size ({x_0s.shape[0]})"
-        )
-    alpha_bar = alpha_bars[t-1]
-    alpha_bar = alpha_bar.view(-1,1,1,1)
-    eps = torch.randn_like(x_0s)
-    x_ts = torch.sqrt(alpha_bar)*x_0s + torch.sqrt(1 - alpha_bar)*eps
-    return x_ts, eps
 
 x_tensor = torch.from_numpy(x_train).float().to(device) / 127.5 - 1   # scale to [-1, 1]
 x_tensor = x_tensor[:,None,:,:]
@@ -40,26 +21,29 @@ x_tensor = x_tensor[:,None,:,:]
 dataset = TensorDataset(x_tensor)
 loader = DataLoader(dataset, batch_size=128, shuffle=True)
 
-n_epochs = 256
+n_epochs = 128
 
 unet = UNet().to(device)
 optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
 
-ckpt_dir = "output/ddpm"
-ckpts = sorted(glob.glob(join(ckpt_dir, "ddpm_*.pth")), key=lambda p: int(re.search(r"ddpm_(\d+)", p).group(1)))
-last_epoch = int(re.search(r"ddpm_(\d+)", ckpts[-1]).group(1))
+ckpt_dir = "output/fm"
+ckpts = sorted(glob.glob(join(ckpt_dir, "fm_*.pth")), key=lambda p: int(re.search(r"fm_(\d+)", p).group(1)))
+last_epoch = int(re.search(r"fm_(\d+)", ckpts[-1]).group(1))
 unet.load_state_dict(torch.load(ckpts[-1], map_location=device))
 print(f"resuming from {ckpts[-1]}")
 
 for epoch in range(last_epoch + 1, last_epoch + 1 + n_epochs):
-    for batch, (x_0s,) in enumerate(loader):
-        ts = torch.randint(1, T+1, (x_0s.shape[0],), device=device)
-        x_ts, epsilons = x_t_given_x_0(ts, x_0s)
-        pred = unet(x_ts, ts)
-        loss = torch.mean(torch.square(epsilons - pred))
+    for batch, (x_1s,) in enumerate(loader):
+        x_0s = torch.randn_like(x_1s)
+        ts = torch.rand(x_1s.shape[0], device=device)
+        t = ts.view(-1, 1, 1, 1)
+        x_ts = (1-t)*x_0s + t*x_1s
+        u_preds = unet(x_ts, ts)
+        us = x_1s - x_0s
+        loss = torch.mean((u_preds - us)**2)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         if batch % 100 == 0:
             print(f"epoch {epoch} batch {batch} loss {loss.item():.4f}")
-    torch.save(unet.state_dict(), join(ckpt_dir, f"ddpm_{epoch}.pth"))
+    torch.save(unet.state_dict(), join(ckpt_dir, f"fm_{epoch}.pth"))
