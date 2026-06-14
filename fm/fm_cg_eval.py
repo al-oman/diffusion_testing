@@ -1,11 +1,13 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root on path for shared modules
 import glob, re, argparse
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from os.path import join
 from utils import MnistDataloader
-from ddpm_unet import UNet
-from guidance.classifier_net import Classifier
+from ddpm.ddpm_unet import UNet
+from cg.classifier_net import Classifier
 import torch.nn.functional as F
 
 parser = argparse.ArgumentParser(description="Train a flow-matching model on MNIST")
@@ -27,14 +29,14 @@ input_path = './input'
 # x_test = torch.from_numpy(x_test[:1024]).float().to(device)[:, None] / 127.5 - 1
 
 # Load U-Net
-unet_ckpts = sorted(glob.glob("output/fm_v2/fm_*.pth"),
+unet_ckpts = sorted(glob.glob("checkpoints/fm_v2/fm_*.pth"),
                key=lambda p: int(re.search(r"fm_(\d+)", p).group(1)))
 unet = UNet().to(device)
 unet.load_state_dict(torch.load(unet_ckpts[-1], map_location=device)["ema"])
 unet.eval()
 
 # Load Classifier
-clsfy_ckpts = sorted(glob.glob("output/fm_clf/fm_clf_*.pth"),
+clsfy_ckpts = sorted(glob.glob("checkpoints/fm_clf/fm_clf_*.pth"),
                key=lambda p: int(re.search(r"fm_clf_(\d+)", p).group(1)))
 classifier = Classifier().to(device)
 classifier.load_state_dict(torch.load(clsfy_ckpts[-1], map_location=device))
@@ -80,6 +82,9 @@ for ax, im in zip(axes.flat, x.clamp(-1, 1).cpu().numpy()[:, 0]):
     ax.imshow(im, cmap='gray')
     ax.axis('off')
 fig.suptitle(f"samples from {unet_ckpts[-1]}")
-plt.savefig("samples.png", dpi=120)
-print("saved samples.png")
+epoch = re.search(r"fm_(\d+)", unet_ckpts[-1]).group(1)
+out_path = f"output/cg/fm_cg_lambda{k_guidance}_y{target_number}_steps{steps}_ep{epoch}.png"
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+plt.savefig(out_path, dpi=120)
+print(f"saved {out_path}")
 plt.show()

@@ -1,11 +1,13 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root on path for shared modules
 from utils import *
 import argparse, glob, re, os
 import torch
 from torch.utils.data import TensorDataset, DataLoader
-from ddpm_unet import UNet
+from ddpm.ddpm_unet import UNet
 
 parser = argparse.ArgumentParser(description="Train a flow-matching model on MNIST")
-parser.add_argument("--resume", action="store_true", help="continue from the latest checkpoint in output/fm_v2")
+parser.add_argument("--resume", action="store_true", help="continue from the latest checkpoint in checkpoints/fm_v2")
 parser.add_argument("--epochs", type=int, default=128, help="number of epochs to run")
 args = parser.parse_args()
 
@@ -27,7 +29,7 @@ x_tensor = x_tensor[:,None,:,:]
 dataset = TensorDataset(x_tensor)
 loader = DataLoader(dataset, batch_size=128, shuffle=True)
 
-ckpt_dir = "output/fm_v2"
+ckpt_dir = "checkpoints/fm_v2"
 os.makedirs(ckpt_dir, exist_ok=True)
 
 unet = UNet().to(device)

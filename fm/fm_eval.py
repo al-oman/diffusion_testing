@@ -1,10 +1,12 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root on path for shared modules
 import glob, re
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from os.path import join
 from utils import MnistDataloader
-from ddpm_unet import UNet
+from ddpm.ddpm_unet import UNet
 
 device = torch.device("mps")
 TIME_SCALE = 1000.0   # must match flow_matching.py
@@ -17,7 +19,7 @@ input_path = './input'
     join(input_path, 't10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte')).load_data()
 x_test = torch.from_numpy(x_test[:1024]).float().to(device)[:, None] / 127.5 - 1
 
-ckpts = sorted(glob.glob("output/fm_v2/fm_*.pth"),
+ckpts = sorted(glob.glob("checkpoints/fm_v2/fm_*.pth"),
                key=lambda p: int(re.search(r"fm_(\d+)", p).group(1)))
 unet = UNet().to(device)
 
@@ -59,6 +61,9 @@ for ax, im in zip(axes.flat, x.clamp(-1, 1).cpu().numpy()[:, 0]):
     ax.imshow(im, cmap='gray')
     ax.axis('off')
 fig.suptitle(f"samples from {ckpts[-1]}")
-plt.savefig("samples.png", dpi=120)
-print("saved samples.png")
+epoch = re.search(r"fm_(\d+)", ckpts[-1]).group(1)
+out_path = f"output/fm/fm_steps{steps}_ep{epoch}.png"
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+plt.savefig(out_path, dpi=120)
+print(f"saved {out_path}")
 plt.show()

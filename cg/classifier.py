@@ -28,7 +28,7 @@ dataset = TensorDataset(x_tensor, y_tensor)
 loader = DataLoader(dataset, batch_size=128, shuffle=True)
 
 n_epochs = 128
-ckpt_dir = "output/fm_clf"
+ckpt_dir = "checkpoints/fm_clf"
 
 classifier = Classifier().to(device)
 optimizer = torch.optim.Adam(classifier.parameters(), lr=1e-4)

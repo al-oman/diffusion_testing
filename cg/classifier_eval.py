@@ -22,7 +22,7 @@ input_path = './input'
 x_tensor = torch.from_numpy(x_test[:1024]).float().to(device)[:, None] / 127.5 - 1
 y_tensor = torch.from_numpy(y_test[:1024]).long().to(device)
 
-ckpts = sorted(glob.glob("output/fm_clf/fm_clf_*.pth"),
+ckpts = sorted(glob.glob("checkpoints/fm_clf/fm_clf_*.pth"),
                key=lambda p: int(re.search(r"fm_clf_(\d+)", p).group(1)))
 classifier = Classifier().to(device)
 
