@@ -1,8 +1,11 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # put parent on path for utils
+
 from utils import *
-import glob, re
 import torch
 from torch.utils.data import TensorDataset, DataLoader
-from ddpm_unet import UNet
+import torch.nn.functional as F
+from classifier_net import Classifier
 
 input_path = './input'
 training_images_filepath = join(input_path, 'train-images-idx3-ubyte/train-images-idx3-ubyte')
@@ -14,36 +17,47 @@ mnist_dataloader = MnistDataloader(training_images_filepath, training_labels_fil
 (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
 
 device = torch.device("mps")
+TIME_SCALE = 1000.0   # t in [0,1] -> match the integer-timestep range the time embedding was built for
 
 x_tensor = torch.from_numpy(x_train).float().to(device) / 127.5 - 1   # scale to [-1, 1]
 x_tensor = x_tensor[:,None,:,:]
 
-dataset = TensorDataset(x_tensor)
+y_tensor = torch.from_numpy(y_train).long().to(device)
+
+dataset = TensorDataset(x_tensor, y_tensor)
 loader = DataLoader(dataset, batch_size=128, shuffle=True)
 
 n_epochs = 128
+ckpt_dir = "output/fm_clf"
 
-unet = UNet().to(device)
-optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
+classifier = Classifier().to(device)
+optimizer = torch.optim.Adam(classifier.parameters(), lr=1e-4)
 
-ckpt_dir = "output/fm"
-ckpts = sorted(glob.glob(join(ckpt_dir, "fm_*.pth")), key=lambda p: int(re.search(r"fm_(\d+)", p).group(1)))
-last_epoch = int(re.search(r"fm_(\d+)", ckpts[-1]).group(1))
-unet.load_state_dict(torch.load(ckpts[-1], map_location=device))
-print(f"resuming from {ckpts[-1]}")
-
-for epoch in range(last_epoch + 1, last_epoch + 1 + n_epochs):
-    for batch, (x_1s,) in enumerate(loader):
+for epoch in range(n_epochs):
+    for batch, (x_1s, ys) in enumerate(loader):
         x_0s = torch.randn_like(x_1s)
         ts = torch.rand(x_1s.shape[0], device=device)
+
         t = ts.view(-1, 1, 1, 1)
         x_ts = (1-t)*x_0s + t*x_1s
-        u_preds = unet(x_ts, ts)
-        us = x_1s - x_0s
-        loss = torch.mean((u_preds - us)**2)
+
+        logits = classifier(x_ts, ts*TIME_SCALE)
+
+        loss = F.cross_entropy(logits, ys)
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         if batch % 100 == 0:
-            print(f"epoch {epoch} batch {batch} loss {loss.item():.4f}")
-    torch.save(unet.state_dict(), join(ckpt_dir, f"fm_{epoch}.pth"))
+            acc = (logits.argmax(1) == ys).float().mean().item()
+            print(f"epoch {epoch} batch {batch} loss {loss.item():.4f} acc {acc:.3f}")
+    torch.save(classifier.state_dict(), join(ckpt_dir, f"fm_clf_{epoch}.pth"))
+        
+
+
+
+
+
+
+
+

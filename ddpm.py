@@ -1,7 +1,13 @@
 from utils import *
+import argparse, glob, re, os
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from ddpm_unet import UNet
+
+parser = argparse.ArgumentParser(description="Train a DDPM on MNIST")
+parser.add_argument("--resume", action="store_true", help="continue from the latest checkpoint in output/ddpm")
+parser.add_argument("--epochs", type=int, default=256, help="number of epochs to run")
+args = parser.parse_args()
 
 input_path = './input'
 training_images_filepath = join(input_path, 'train-images-idx3-ubyte/train-images-idx3-ubyte')
@@ -39,13 +45,24 @@ x_tensor = x_tensor[:,None,:,:]
 dataset = TensorDataset(x_tensor)
 loader = DataLoader(dataset, batch_size=128, shuffle=True)
 
-n_epochs = 24
+ckpt_dir = "output/ddpm"
+os.makedirs(ckpt_dir, exist_ok=True)
 
 unet = UNet().to(device)
 optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
 
-for epoch in range(n_epochs):
-    for (x_0s,) in loader:
+start_epoch = 0
+if args.resume:
+    ckpts = sorted(glob.glob(join(ckpt_dir, "ddpm_*.pth")), key=lambda p: int(re.search(r"ddpm_(\d+)", p).group(1)))
+    if ckpts:
+        unet.load_state_dict(torch.load(ckpts[-1], map_location=device))
+        start_epoch = int(re.search(r"ddpm_(\d+)", ckpts[-1]).group(1)) + 1
+        print(f"resuming from {ckpts[-1]}")
+    else:
+        print(f"--resume set but no checkpoints in {ckpt_dir}, starting fresh")
+
+for epoch in range(start_epoch, start_epoch + args.epochs):
+    for batch, (x_0s,) in enumerate(loader):
         ts = torch.randint(1, T+1, (x_0s.shape[0],), device=device)
         x_ts, epsilons = x_t_given_x_0(ts, x_0s)
         pred = unet(x_ts, ts)
@@ -53,12 +70,6 @@ for epoch in range(n_epochs):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        print('-')
-    torch.save(unet.state_dict(), f"ddpm_{epoch}.pth")
-
-
-
-
-
-
-
+        if batch % 100 == 0:
+            print(f"epoch {epoch} batch {batch} loss {loss.item():.4f}")
+    torch.save(unet.state_dict(), join(ckpt_dir, f"ddpm_{epoch}.pth"))
